@@ -1,3 +1,4 @@
+import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -10,7 +11,7 @@ export async function POST(req: NextRequest) {
     if (!email || !password) {
       return NextResponse.json({ error: "Bad request" }, { status: 400 });
     }
-
+    await connectDB();
     const exist = await User.findOne({ email });
     /// if existed
     if (exist) {
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: (error as Error).message },
       { status: 500 }
     );
   }
