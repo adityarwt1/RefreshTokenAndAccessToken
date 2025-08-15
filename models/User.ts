@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, mongo } from "mongoose";
 import jwt from "jsonwebtoken";
-import crypto from "crypto";
+import crypto from "node:crypto";
 interface User extends Document {
   email: string;
   password: string;
@@ -45,6 +45,7 @@ UserSchema.methods.generateRefreshToken = function () {
   return jwt.sign(
     {
       _id: this._id,
+      email: this.email,
     },
     process.env.JWT_SECRET as string,
     {
