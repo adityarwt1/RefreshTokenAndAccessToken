@@ -2,46 +2,99 @@ import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcrypt";
 
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
 
-    /// if body is empty
+    // Validate input
     if (!email || !password) {
-      return NextResponse.json({ error: "Bad request" }, { status: 400 });
-    }
-    await connectDB();
-    const exist = await User.findOne({ email });
-    /// if existed
-    if (exist) {
       return NextResponse.json(
-        { error: "user already exist" },
+        { error: "Email and password are required" },
+        { status: 400 }
+      );
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: "Invalid email format" },
+        { status: 400 }
+      );
+    }
+
+    // Password validation (minimum 6 characters)
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
+
+    await connectDB();
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return NextResponse.json(
+        { error: "User already exists" },
         { status: 409 }
       );
     }
 
-    // saving the user to the db
-    const user = new User({ email, password });
-    await user.save();
+    // Hash password before saving
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const AccessToken = user.generateAccessToken();
+    // Create new user
+    const user = new User({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+    });
+
+    // Generate tokens
+    const accessToken = user.generateAccessToken();
     const refreshToken = user.generateRefreshToken();
 
-    /// save the refresh token to the mongodb
+    // Save refresh token to user document
     user.refreshToken = refreshToken;
     await user.save();
 
-    (await cookies()).set("token", AccessToken, {
+    // Set cookies
+    const cookieStore = await cookies();
+
+    // Set access token cookie
+    cookieStore.set("accessToken", accessToken, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
+
+    // Set refresh token cookie
+    cookieStore.set("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 10 * 24 * 60 * 60 * 1000, // 10 days
+    });
+
     return NextResponse.json(
-      { message: "signup successfully" },
+      {
+        message: "Signup successful",
+        user: {
+          id: user._id,
+          email: user.email,
+        },
+      },
       { status: 201 }
     );
   } catch (error) {
+    console.error("Signup error:", error);
     return NextResponse.json(
-      { error: (error as Error).message },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
